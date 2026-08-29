@@ -1,0 +1,8 @@
+# Packagist の dist アーカイブに開発用ファイルを含めない
+/tests                   export-ignore
+/.github                 export-ignore
+/phpunit.xml             export-ignore
+/phpstan.neon            export-ignore
+/.php-cs-fixer.dist.php  export-ignore
+/.gitattributes          export-ignore
+/.gitignore              export-ignore

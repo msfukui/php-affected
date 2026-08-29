@@ -1,0 +1,92 @@
+<?php
+
+declare(strict_types=1);
+
+/**
+ * ファイルを指定したときに、どのテストが選ばれるか。
+ * ツールの中心的な振る舞いなので実際に CLI を起動して確かめる。
+ *
+ * 既定の出力は「影響を受ける全ファイル」なので、テストの選択を見る場合は
+ * --tests を付ける。既定の動作そのものは CliOptionsTest で確かめている。
+ */
+
+beforeEach(function () {
+    $this->sample = fixture('sample');
+    $this->bootstrapped = fixture('bootstrapped');
+});
+
+it('末端クラスを変更したら対応するテストだけを選ぶ', function () {
+    expect(runCli($this->sample, ['src/Unrelated/Widget.php', '--tests'])['out'])
+        ->toEqualCanonicalizing(['tests/WidgetTest.php']);
+});
+
+it('関数と定数の変更が推移的に波及する', function () {
+    // helpers.php -> Money (use function/use const) -> Order (docblock) / Report (group use)
+    expect(runCli($this->sample, ['src/Support/helpers.php', '--tests'])['out'])
+        ->toEqualCanonicalizing([
+            'tests/MoneyTest.php',
+            'tests/OrderTest.php',
+            'tests/ReportTest.php',
+        ]);
+});
+
+it('interface の変更が実装クラスと利用側の両方に波及する', function () {
+    expect(runCli($this->sample, ['src/Contract/PaymentGateway.php', '--tests'])['out'])
+        ->toEqualCanonicalizing(['tests/PaymentServiceTest.php']);
+});
+
+it('名前空間のないレガシーコードを require チェーン越しに追う', function () {
+    expect(runCli($this->sample, ['src/Legacy/legacy_util.php', '--tests'])['out'])
+        ->toEqualCanonicalizing(['tests/LegacyTest.php']);
+});
+
+it('require でしか到達しないファイルも追う', function () {
+    expect(runCli($this->sample, ['container/services.php', '--tests'])['out'])
+        ->toEqualCanonicalizing(['tests/ContainerTest.php']);
+});
+
+it('グループ use のエイリアス経由の依存を追う', function () {
+    expect(runCli($this->sample, ['src/Support/Formatter.php', '--tests'])['out'])
+        ->toEqualCanonicalizing(['tests/ReportTest.php']);
+});
+
+it('テストの基底クラスを変更したら全テストを選ぶが基底自体は出さない', function () {
+    expect(runCli($this->sample, ['tests/Support/BaseTestCase.php', '--tests'])['out'])
+        ->toEqualCanonicalizing([
+            'tests/ContainerTest.php',
+            'tests/DetachedTest.php',
+            'tests/LegacyTest.php',
+            'tests/MoneyTest.php',
+            'tests/OrderTest.php',
+            'tests/PaymentServiceTest.php',
+            'tests/ReportTest.php',
+            'tests/WidgetTest.php',
+        ]);
+});
+
+it('静的な参照がなくても命名規約で対応付ける', function () {
+    expect(runCli($this->sample, ['src/Detached.php', '--tests'])['out'])
+        ->toEqualCanonicalizing(['tests/DetachedTest.php']);
+});
+
+// 既知の限界。DI コンテナに文字列で登録された実装クラスには静的解析では届かない
+it('文字列でしか参照されない実装クラスには届かない', function () {
+    expect(runCli($this->sample, ['src/Payment/StripeGateway.php', '--tests'])['out'])->toBe([]);
+});
+
+describe('全テストが読み込むファイル', function () {
+    it('composer の autoload.files の変更は全テストに波及する', function () {
+        expect(runCli($this->bootstrapped, ['src/globals.php', '--tests'])['out'])
+            ->toEqualCanonicalizing(['tests/OtherTest.php', 'tests/ThingTest.php']);
+    });
+
+    it('phpunit の bootstrap が依存するクラスも全テストに波及する', function () {
+        expect(runCli($this->bootstrapped, ['src/BootSupport.php', '--tests'])['out'])
+            ->toEqualCanonicalizing(['tests/OtherTest.php', 'tests/ThingTest.php']);
+    });
+
+    it('通常のクラスは絞り込まれたままにする', function () {
+        expect(runCli($this->bootstrapped, ['src/Thing.php', '--tests'])['out'])
+            ->toEqualCanonicalizing(['tests/ThingTest.php']);
+    });
+});

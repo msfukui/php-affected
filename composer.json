@@ -1,0 +1,81 @@
+{
+    "name": "msfukui/php-affected",
+    "description": "Lists the PHP files that depend on the files you specify. Static analysis with PHP's own tokenizer only - no coverage run, no framework lock-in, no runtime dependencies.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": [
+        "testing",
+        "phpunit",
+        "pest",
+        "ci",
+        "static-analysis",
+        "dependency-analysis",
+        "test-impact-analysis",
+        "affected-tests",
+        "test-selection",
+        "monorepo"
+    ],
+    "homepage": "https://github.com/msfukui/php-affected",
+    "authors": [
+        {
+            "name": "msfukui",
+            "homepage": "https://github.com/msfukui"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/msfukui/php-affected/issues",
+        "source": "https://github.com/msfukui/php-affected"
+    },
+    "require": {
+        "php": ">=8.2",
+        "ext-json": "*",
+        "ext-libxml": "*",
+        "ext-simplexml": "*",
+        "ext-tokenizer": "*"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.95",
+        "pestphp/pest": "^3.0",
+        "phpstan/phpstan": "^2.2"
+    },
+    "autoload": {
+        "psr-4": {
+            "PhpAffected\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "PhpAffected\\Tests\\": "tests/"
+        }
+    },
+    "bin": [
+        "bin/php-affected"
+    ],
+    "config": {
+        "platform": {
+            "php": "8.2.0"
+        },
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        },
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": "pest",
+        "stan": "phpstan analyse --memory-limit=512M",
+        "lint": "php-cs-fixer fix --dry-run --diff",
+        "fix": "php-cs-fixer fix",
+        "check": [
+            "@stan",
+            "@lint",
+            "@test"
+        ]
+    },
+    "scripts-descriptions": {
+        "test": "Pest でテストを実行する",
+        "stan": "PHPStan で静的解析する",
+        "lint": "コードスタイルを検査する (修正はしない)",
+        "fix": "コードスタイルを修正する",
+        "check": "CI と同じ検査を一通り実行する"
+    }
+}

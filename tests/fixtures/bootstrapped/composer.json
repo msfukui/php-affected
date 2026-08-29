@@ -1,0 +1,6 @@
+{
+    "autoload": {
+        "psr-4": { "Boot\\": "src/" },
+        "files": ["src/globals.php"]
+    }
+}

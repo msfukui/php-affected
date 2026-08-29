@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 同じ PR に続けて push したとき、古い実行を打ち切って無駄を減らす。
+# main への push は履歴として残したいので打ち切らない。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      # 1 つのバージョンで落ちても他の結果を知りたい
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4', '8.5']
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # 後続ステップに認証情報を残さない
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: json, libxml, simplexml, tokenizer
+          coverage: none
+          tools: composer:v2
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+
+      - name: Run tests
+        run: vendor/bin/pest
+
+      # 本体は依存パッケージを持たない。bin/ と src/ のコピーだけで
+      # 動く状態が壊れていないことを確かめる
+      - name: Verify standalone usage
+        run: |
+          mkdir -p "$RUNNER_TEMP/standalone"
+          cp -R bin src "$RUNNER_TEMP/standalone/"
+          output=$("$RUNNER_TEMP/standalone/bin/php-affected" \
+            --root=tests/fixtures/sample --tests src/Support/helpers.php)
+          echo "$output"
+          test "$(echo "$output" | wc -l)" -eq 3
+
+  quality:
+    name: Static analysis & code style
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # 後続ステップに認証情報を残さない
+          persist-credentials: false
+
+      # composer.json の platform 設定に合わせて、対応する最低バージョンで確かめる。
+      # 静的解析と整形の結果は PHP のバージョンに依らないのでマトリクスにはしない。
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.2'
+          extensions: json, libxml, simplexml, tokenizer
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        uses: ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda # 4.0.0
+
+      - name: PHPStan
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=512M
+
+      - name: PHP CS Fixer
+        run: vendor/bin/php-cs-fixer fix --dry-run --diff --show-progress=none

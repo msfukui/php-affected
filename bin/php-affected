@@ -1,0 +1,23 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+if (PHP_VERSION_ID < 80200) {
+    fwrite(STDERR, 'PHP 8.2 以上が必要です (現在: ' . PHP_VERSION . ')' . PHP_EOL);
+    exit(1);
+}
+
+// 依存パッケージを持たないので composer の autoload は使わない。
+// bin/ と src/ をコピーするだけで動く状態を保つため。
+spl_autoload_register(static function (string $class): void {
+    if (!str_starts_with($class, 'PhpAffected\\')) {
+        return;
+    }
+    $file = __DIR__ . '/../src/' . str_replace('\\', '/', substr($class, 12)) . '.php';
+    if (is_file($file)) {
+        require $file;
+    }
+});
+
+exit((new PhpAffected\Cli())->run($argv));

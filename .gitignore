@@ -1,0 +1,8 @@
+/vendor/
+
+# ツールのキャッシュ
+/.php-cs-fixer.cache
+
+# エディタの一時ファイル
+.*.swp
+.DS_Store

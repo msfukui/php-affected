@@ -1,0 +1,65 @@
+name: Workflow lint
+
+# ワークフロー自体を zizmor で監査する。
+#
+# on: の paths で絞るとワークフローが起動せず、必須チェックにしたときに
+# 「実行待ち」のまま PR がブロックされる。そのためジョブは常に起動させ、
+# dorny/paths-filter の結果でステップ側を skip する。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# 同じ PR に続けて push したとき、古い実行を打ち切って無駄を減らす。
+# main への push は履歴として残したいので打ち切らない。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read # checkout でリポジトリを読むため
+      pull-requests: read # paths-filter が PR の変更ファイル一覧を REST API から取るため
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # 後続ステップに認証情報を残さない
+          persist-credentials: false
+
+      # push イベントでの差分検出は git 履歴の深さに依存して壊れやすいので、
+      # PR のときだけ絞る。main への push は毎回監査する。
+      - name: Detect .github changes
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            workflows:
+              - '.github/**'
+
+      - name: Run zizmor
+        if: github.event_name != 'pull_request' || steps.filter.outputs.workflows == 'true'
+        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        with:
+          # '.' にしておけば将来 .github/actions/ を足しても拾える
+          inputs: .
+          # persona=auditor は最も厳しい設定。現状これで指摘ゼロなので、
+          # 下げる必要が出たら regular / pedantic に緩める
+          persona: auditor
+          # 既定は latest。新しい監査項目が増えて突然落ちるのを避けるため固定する
+          version: 1.29.0
+          # SARIF のアップロードには security-events: write が要るが、
+          # fork からの PR ではトークンが読み取り専用になり必ず失敗する。
+          # 必須チェックにするので使わず、PR 上の注釈で指摘を見せる
+          advanced-security: false
+          annotations: true
