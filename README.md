@@ -94,7 +94,7 @@ comm -23 <(bin/php-affected         src/Support/Money.php | sort) \
 
 ### 選ばれた理由を確認する
 
-`--why` は、指定されたファイルまでの経路と 依存の原因になったクラス、関数、定数など**を表示する。
+`--why` は、指定されたファイルまでの経路と **依存の原因になったクラス、関数、定数など**を表示する。
 
 ```
 $ bin/php-affected --why src/Support/helpers.php
@@ -191,9 +191,20 @@ vendor/bin/phpunit -c affected.xml
 
 ## 制約事項
 
-- 動的な `require $path` や `new $className` は追えない
-- `call_user_func('Foo::bar')` のような文字列経由の呼び出しは追えない
-- DI コンテナに文字列でクラス名を登録している場合、実装クラスの変更は追えない (テストは interface しか参照していないため)
+過小検出となる場合:
+
+- 動的な `require $path` や `new $className` の依存は検出できない
+- `call_user_func('Foo::bar')` のような文字列経由の呼び出しは検出できない
+- DI コンテナに文字列でクラス名を登録している場合、実装クラスの変更は検出できない
+
+過剰検出となる場合:
+
+- 依存関係が一切なくても `Foo.php` に対応する `FooTest.php`, `FooTestCase.php`, `FooSpec.php` があれば依存ありと判定する
+  - テストの命名規約に従っている場合、念の為テストが対象クラスを参照している可能性が高いと判断する
+  - ディレクトリパスの対応は判断条件には含まれず、ファイル名のみで判定している
+
+その他:
+
 - 1 ファイルに複数の namespace 宣言がある場合、docblock の型解決はファイル全体の `use` を合算して行う
 
 ## ライセンス

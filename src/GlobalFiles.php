@@ -29,13 +29,51 @@ final readonly class GlobalFiles
     {
         $found = [];
         foreach ([...$this->fromComposer(), ...$this->fromPhpunit()] as [$path, $scope]) {
-            $real = realpath($path);
-            if ($real !== false && is_file($real)) {
-                $found[$real . "\0" . $scope] = ['path' => $real, 'scope' => $scope];
+            $normalized = self::normalize($path);
+            if (is_file($normalized)) {
+                $found[$normalized . "\0" . $scope] = ['path' => $normalized, 'scope' => $scope];
             }
         }
 
-        return array_values($found);
+        return $this->dropSubsumedScopes(array_values($found));
+    }
+
+    /**
+     * 同じファイルが複数の scope で登録されることがある。
+     *
+     * 例えば laravel はルートの composer.json とサブパッケージの composer.json の
+     * 両方が同じ autoload.files を持つため、`src/Illuminate/Support/helpers.php` が
+     * scope=ルート と scope=src/Illuminate/Support の 2 通りで登録される。
+     * 広い scope は狭い scope を包含するので、狭いほうは何も足さない。
+     *
+     * @param  list<array{path: string, scope: string}> $globals
+     * @return list<array{path: string, scope: string}>
+     */
+    private function dropSubsumedScopes(array $globals): array
+    {
+        $scopesByPath = [];
+        foreach ($globals as $global) {
+            $scopesByPath[$global['path']][] = $global['scope'];
+        }
+
+        $out = [];
+        foreach ($scopesByPath as $path => $scopes) {
+            foreach (array_unique($scopes) as $scope) {
+                $subsumed = false;
+                foreach (array_unique($scopes) as $other) {
+                    // $scope が $other の配下にある = $scope のほうが狭い
+                    if ($other !== $scope && str_starts_with($scope . '/', $other . '/')) {
+                        $subsumed = true;
+                        break;
+                    }
+                }
+                if (!$subsumed) {
+                    $out[] = ['path' => $path, 'scope' => $scope];
+                }
+            }
+        }
+
+        return $out;
     }
 
     /**
@@ -115,6 +153,28 @@ final readonly class GlobalFiles
         $bootstrap = (string) ($xml['bootstrap'] ?? '');
 
         return $bootstrap === '' ? null : $bootstrap;
+    }
+
+    /**
+     * '.' と '..' を文字列操作だけで畳む。realpath() と違いシンボリックリンクは解決しない。
+     */
+    private static function normalize(string $path): string
+    {
+        $isAbsolute = str_starts_with($path, '/');
+
+        $segments = [];
+        foreach (explode('/', $path) as $segment) {
+            if ($segment === '' || $segment === '.') {
+                continue;
+            }
+            if ($segment === '..') {
+                array_pop($segments);
+                continue;
+            }
+            $segments[] = $segment;
+        }
+
+        return ($isAbsolute ? '/' : '') . implode('/', $segments);
     }
 
     /** @return array<array-key, mixed> */

@@ -14,7 +14,7 @@ function detectGlobals(string $root): array
 }
 
 /**
- * 検証しやすいように [ルートからの相対パス => scope の相対パス] にする。
+ * 検証しやすいように [ルートからの相対パス => scope の相対パス] にする
  *
  * @return array<string, string>
  */
@@ -101,7 +101,6 @@ describe('サブディレクトリの設定', function () {
             ->toBe(['apps/api/tests/boot.php' => 'apps/api']);
     });
 
-    // 相対パスは設定ファイルの位置基準。ルート基準で解決すると別物を指してしまう
     it('相対パスを設定ファイルのある場所から解決する', function () {
         $root = makeProject([
             'boot.php' => '<?php',                     // ルートの同名ファイル (これではない)
@@ -120,6 +119,68 @@ describe('サブディレクトリの設定', function () {
         ]);
 
         expect(detectGlobals($root))->toBe([]);
+    });
+});
+
+describe('scope の重複', function () {
+    it('広い scope に包含される狭い scope は落とす', function () {
+        $root = makeProject([
+            'composer.json' => json_encode(['autoload' => ['files' => ['packages/alpha/src/h.php']]]),
+            'packages/alpha/composer.json' => json_encode(['autoload' => ['files' => ['src/h.php']]]),
+            'packages/alpha/src/h.php' => '<?php',
+        ]);
+
+        $globals = detectGlobals($root);
+
+        expect($globals)->toHaveCount(1)
+            ->and(relativeGlobals($root, $globals))->toBe(['packages/alpha/src/h.php' => '.']);
+    });
+
+    it('互いに包含しない scope は両方残す', function () {
+        $shared = '<?xml version="1.0"?><phpunit bootstrap="../../shared/bootstrap.php"/>';
+        $root = makeProject([
+            'packages/alpha/phpunit.xml' => $shared,
+            'packages/beta/phpunit.xml' => $shared,
+            'shared/bootstrap.php' => '<?php',
+        ]);
+
+        $globals = detectGlobals($root);
+        $scopes = array_map(static fn(array $g): string => basename($g['scope']), $globals);
+        sort($scopes);
+
+        expect($scopes)->toBe(['alpha', 'beta'])
+            // '..' は設定ファイルの位置から畳まれる
+            ->and($globals[0]['path'])->toBe($root . '/shared/bootstrap.php');
+    });
+});
+
+describe('パスの正規化', function () {
+    it('相対指定の . と .. を畳む', function () {
+        $root = makeProject([
+            'phpunit.xml' => '<?xml version="1.0"?><phpunit bootstrap="./tests/../boot.php"/>',
+            'boot.php' => '<?php',
+        ]);
+
+        expect(detectGlobals($root)[0]['path'])->toBe($root . '/boot.php');
+    });
+
+    it('シンボリックリンクは解決せず走査結果と同じ表記のままにする', function () {
+        $real = makeProject([
+            'composer.json' => json_encode(['autoload' => ['files' => ['boot.php']]]),
+            'boot.php' => '<?php',
+        ]);
+        $link = $real . '-link';
+        symlink($real, $link);
+
+        try {
+            $globals = detectGlobals($link);
+
+            expect($globals)->toHaveCount(1)
+                ->and($globals[0]['path'])->toBe($link . '/boot.php')
+                ->and($globals[0]['scope'])->toBe($link);
+        } finally {
+            unlink($link);
+        }
     });
 });
 
