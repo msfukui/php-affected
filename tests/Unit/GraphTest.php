@@ -176,6 +176,17 @@ describe('起点の interface 利用側への拡張', function () {
         expect($graph->expandToInterfaceConsumers(['/p/Child.php']))->toBe(['/p/Child.php']);
     });
 
+    // グラフに含まれないパスを渡されても壊れないこと。
+    // phpunit.xml で failOnWarning=true にしているので、警告が出ればこのテストが落ちる
+    it('グラフに含まれないパスを渡されても壊れない', function () {
+        $graph = gatewayGraph();
+
+        expect($graph->expandToInterfaceConsumers(['/p/NotInGraph.php', '/p/Impl.php']))
+            ->toContain('/p/NotInGraph.php')
+            ->toContain('/p/Consumer.php')
+            ->not->toContain('/p/Sibling.php');
+    });
+
     it('interface 同士の継承も辿る', function () {
         $graph = graphOf([
             '/p/Upper.php' => parsedFile('/p/Upper.php', ['classDefs' => ['upper']]),
