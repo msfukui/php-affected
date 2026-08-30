@@ -179,6 +179,12 @@ final class Cli
             return 0;
         }
 
+        // 指定ファイルが実装する interface も起点に加える。
+        // DI コンテナ経由でしか実装クラスに触れないコードでは、テストは interface しか
+        // 参照しておらず、起点を広げないとそのテストに到達できない
+        $isSpecified = array_fill_keys($seeds, true);
+        $seeds = $graph->expandToInterfaces($seeds);
+
         ['depth' => $depth, 'from' => $from] = $graph->impacted($seeds);
 
         // 静的な参照がなくても Foo.php <-> FooTest.php は対応付ける
@@ -221,7 +227,7 @@ final class Cli
 
         if ($this->whyTarget === null) {
             foreach (array_keys($selected) as $path) {
-                $this->explain($path, $from, $depth, $scanner, $graph);
+                $this->explain($path, $isSpecified, $from, $depth, $scanner, $graph);
             }
             return 0;
         }
@@ -239,7 +245,7 @@ final class Cli
             ));
             return 0;
         }
-        $this->explain($target, $from, $depth, $scanner, $graph);
+        $this->explain($target, $isSpecified, $from, $depth, $scanner, $graph);
 
         return 0;
     }
@@ -302,15 +308,25 @@ final class Cli
      * 経路は幅優先探索の親 ($from) を辿って得た最短の 1 本
      * 複数の経路がある場合でも代表の 1 本だけを示す
      *
-     * @param array<string,string|null> $from  探索木の親
+     * 起点には指定ファイルのほかに、それが実装する interface も含まれる。
+     * どちらを辿り着いた先としたのかが読み手に分かるよう、印を書き分ける。
+     *
+     * @param array<string,bool>        $isSpecified 利用者が実際に指定したファイル
+     * @param array<string,string|null> $from        探索木の親
      * @param array<string,int>         $depth
      */
-    private function explain(string $path, array $from, array $depth, Scanner $scanner, Graph $graph): void
-    {
+    private function explain(
+        string $path,
+        array $isSpecified,
+        array $from,
+        array $depth,
+        Scanner $scanner,
+        Graph $graph,
+    ): void {
         echo $scanner->relative($path), PHP_EOL;
 
         if (($depth[$path] ?? -1) === 0) {
-            echo '  (指定ファイル自身)', PHP_EOL;
+            echo isset($isSpecified[$path]) ? '  (指定ファイル自身)' : '  (指定ファイルの interface)', PHP_EOL;
             return;
         }
         $next = $from[$path] ?? null;
@@ -330,7 +346,10 @@ final class Cli
             if (count($reasons) > 3) {
                 $label .= ' 他 ' . (count($reasons) - 3) . ' 件';
             }
-            $mark = ($depth[$next] ?? -1) === 0 ? '   ← 指定ファイル' : '';
+            $mark = '';
+            if (($depth[$next] ?? -1) === 0) {
+                $mark = isset($isSpecified[$next]) ? '   ← 指定ファイル' : '   ← 指定ファイルの interface';
+            }
 
             echo str_repeat(' ', $indent), '└─ ', $label, ' → ', $scanner->relative($next), $mark, PHP_EOL;
 

@@ -124,6 +124,12 @@ final class Graph
                     $deps[$target] = true;
                 }
             }
+            // DI コンテナや設定配列にクラス名を文字列で書く形を拾う
+            foreach ($parsed->strings as $ref) {
+                foreach ($this->classIndex[$ref] ?? [] as $target) {
+                    $deps[$target] = true;
+                }
+            }
             // 名前空間内の未修飾名のグローバルフォールバック。クラスには当てない
             foreach ($parsed->globalRefs as $ref) {
                 foreach ($this->funcIndex[strtolower($ref)] ?? [] as $target) {
@@ -225,6 +231,11 @@ final class Graph
             $addFunc(strtolower($ref));
             $addConst($ref);
         }
+        foreach ($source->strings as $ref) {
+            if (isset($classDefs[$ref])) {
+                $reasons['class ' . ($this->display[$ref] ?? $ref) . ' (文字列リテラル)'] = true;
+            }
+        }
         if (in_array($to, $source->includes, true)) {
             $reasons['require/include'] = true;
         }
@@ -233,6 +244,43 @@ final class Graph
         }
 
         return array_keys($reasons);
+    }
+
+    /**
+     * 指定されたファイルが実装する interface を辿り、それを定義するファイルも起点に加える。
+     *
+     * DI コンテナ経由でしか実装クラスに触れないコードでは、テストは interface しか
+     * 参照していない。起点を interface まで広げないとそのテストに到達できない。
+     *
+     * 基底クラス (`extends`) まで広げると代償が大きすぎる。実測では laravel の
+     * `class Warn extends Component` で対象が 1 件から 983 件 (全テスト) に膨れた。
+     * DI で注入されるのは通常 interface なので、そこに限定している。
+     *
+     * @param  list<string> $seeds
+     * @return list<string>
+     */
+    public function expandToInterfaces(array $seeds): array
+    {
+        $out = array_fill_keys($seeds, true);
+
+        $queue = $seeds;
+        for ($head = 0; $head < count($queue); $head++) {
+            $parsed = $this->files[$queue[$head]] ?? null;
+            if ($parsed === null) {
+                continue;
+            }
+            foreach ($parsed->interfaces as $interfaceFqn) {
+                foreach ($this->classIndex[$interfaceFqn] ?? [] as $definer) {
+                    if (isset($out[$definer])) {
+                        continue;
+                    }
+                    $out[$definer] = true;
+                    $queue[] = $definer;
+                }
+            }
+        }
+
+        return array_keys($out);
     }
 
     /**

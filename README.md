@@ -111,6 +111,24 @@ tests/OrderTest.php
 
 require/include, 全テストが読み込むファイル(bootstrap 等)、命名規約による対応付けも理由として表示される
 
+DI コンテナのように、型宣言だけでは実装クラスに辿り着けない構成にも対応している
+
+```
+$ bin/php-affected --why src/Payment/StripeGateway.php
+src/Contract/PaymentGateway.php
+  (指定ファイルの interface)
+tests/ContainerTest.php
+  └─ require/include → container/services.php
+      └─ class App\Payment\StripeGateway (文字列リテラル) → src/Payment/StripeGateway.php   ← 指定ファイル
+tests/PaymentServiceTest.php
+  └─ class App\Payment\PaymentService → src/Payment/PaymentService.php
+      └─ class App\Contract\PaymentGateway → src/Contract/PaymentGateway.php   ← 指定ファイルの interface
+```
+
+`StripeGateway` はコンテナに文字列で登録されているだけで、利用側の `PaymentService` は
+interface しか型宣言していない
+この 2 つの経路 (**文字列リテラル** と **interface への起点の拡張**) で到達している
+
 ### 全テストが読み込むファイル
 
 composer の `autoload.files` と phpunit.xml の `bootstrap` に指定されたファイルは、
@@ -195,13 +213,22 @@ vendor/bin/phpunit -c affected.xml
 
 - 動的な `require $path` や `new $className` の依存は検出できない
 - `call_user_func('Foo::bar')` のような文字列経由の呼び出しは検出できない
-- DI コンテナに文字列でクラス名を登録している場合、実装クラスの変更は検出できない
+- クラス名を動的に組み立てている場合 (`'App\\' . $name`) は検出できない
+- 名前空間区切りのない文字列 (`'User'`) はクラス名として扱わない
+  - 設定値やメッセージと区別がつかず、過剰検出が大きくなりすぎるため
 
 過剰検出となる場合:
 
 - 依存関係が一切なくても `Foo.php` に対応する `FooTest.php`, `FooTestCase.php`, `FooSpec.php` があれば依存ありと判定する
   - テストの命名規約に従っている場合、念の為テストが対象クラスを参照している可能性が高いと判断する
   - ディレクトリパスの対応は判断条件には含まれず、ファイル名のみで判定している
+- 名前空間区切りを含む文字列リテラルをクラス参照として扱う
+  - DI コンテナへの登録や設定配列を辿るため
+  - ログのメッセージなどにクラス名を書いている場合、実際には使っていなくても依存として数える
+- 指定ファイルが実装する interface も起点に加える
+  - 利用側が interface しか型宣言していない場合に、そのテストへ届かせるため
+  - `extends` の基底クラスは対象外。laravel の `class Warn extends Component` で計測したところ、
+    基底クラスまで広げると対象が 1 件から 983 件 (全テスト) に膨れたため
 
 その他:
 

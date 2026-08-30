@@ -178,6 +178,21 @@ describe('参照の抽出', function () {
             ->and($parsed->classRefs)->toContain('app\base');
     });
 
+    // DI で注入されるのは通常 interface なので、起点を広げる対象を interface に限る。
+    // 基底クラスまで広げると影響範囲が跳ね上がる (laravel で 1 件 -> 983 件)
+    it('implements 先だけを interface として記録する', function () {
+        $parsed = parseCode('<?php namespace App; class X extends Base implements Alpha, Beta {}');
+
+        expect($parsed->parents)->toBe(['app\base', 'app\alpha', 'app\beta'])
+            ->and($parsed->interfaces)->toBe(['app\alpha', 'app\beta']);
+    });
+
+    it('interface の extends 先も interface として記録する', function () {
+        $parsed = parseCode('<?php namespace App; interface X extends Alpha, Beta {}');
+
+        expect($parsed->interfaces)->toBe(['app\alpha', 'app\beta']);
+    });
+
     it('クラス本体の use は trait の参照として扱う', function () {
         $parsed = parseCode('<?php namespace App; class X { use Loggable, Cacheable; }');
 
@@ -245,6 +260,38 @@ describe('参照の抽出', function () {
 
         expect($parsed->classRefs)->toBe([])
             ->and($parsed->anyRefs)->toBe([]);
+    });
+});
+
+describe('文字列リテラル', function () {
+    // DI コンテナや設定配列にクラス名を文字列で書く形を拾う
+    it('名前空間区切りを含む文字列をクラス参照の候補にする', function () {
+        $parsed = parseCode(<<<'PHP'
+            <?php
+            return ['gateway' => 'App\Payment\StripeGateway'];
+            PHP);
+
+        expect($parsed->strings)->toBe(['app\payment\stripegateway']);
+    });
+
+    // 区切りのない文字列まで拾うと、設定値やメッセージと区別がつかず誤検出が増える
+    it('名前空間区切りのない文字列は拾わない', function () {
+        $parsed = parseCode('<?php $a = "User"; $b = "処理に失敗しました"; $c = "a/b/c";');
+
+        expect($parsed->strings)->toBe([]);
+    });
+
+    // 表記は揺れるが同じクラスを指す。二重引用符に stripcslashes() を使うと
+    // "App\Money" の \M が落ちて AppMoney になり、クラス名として認識できなくなる
+    it('引用符とエスケープの違いを吸収して揃える', function () {
+        $parsed = parseCode(<<<'PHP'
+            <?php
+            $a = '\App\Money';
+            $b = "App\\Money";
+            $c = "App\Money";
+            PHP);
+
+        expect($parsed->strings)->toBe(['app\money']);
     });
 });
 

@@ -32,8 +32,9 @@ it('関数と定数の変更が推移的に波及する', function () {
 });
 
 it('interface の変更が実装クラスと利用側の両方に波及する', function () {
+    // 実装クラス StripeGateway 経由で container のテストにも届く
     expect(runCli($this->sample, ['src/Contract/PaymentGateway.php', '--tests'])['out'])
-        ->toEqualCanonicalizing(['tests/PaymentServiceTest.php']);
+        ->toEqualCanonicalizing(['tests/ContainerTest.php', 'tests/PaymentServiceTest.php']);
 });
 
 it('名前空間のないレガシーコードを require チェーン越しに追う', function () {
@@ -70,9 +71,25 @@ it('静的な参照がなくても命名規約で対応付ける', function () {
         ->toEqualCanonicalizing(['tests/DetachedTest.php']);
 });
 
-// 既知の限界。DI コンテナに文字列で登録された実装クラスには静的解析では届かない
-it('文字列でしか参照されない実装クラスには届かない', function () {
-    expect(runCli($this->sample, ['src/Payment/StripeGateway.php', '--tests'])['out'])->toBe([]);
+describe('DI コンテナ経由でしか参照されない実装クラス', function () {
+    // StripeGateway はコンテナに文字列で登録されているだけで、
+    // 利用側の PaymentService は interface しか型宣言していない。
+    // 文字列リテラルの照合と、継承元への起点拡張の 2 経路で到達する
+    it('文字列リテラルと継承元の両方をたどって到達する', function () {
+        expect(runCli($this->sample, ['src/Payment/StripeGateway.php', '--tests'])['out'])
+            ->toEqualCanonicalizing(['tests/ContainerTest.php', 'tests/PaymentServiceTest.php']);
+    });
+
+    it('文字列リテラル経由であることを説明できる', function () {
+        expect(runCli($this->sample, ['src/Payment/StripeGateway.php', '--why'])['raw'])
+            ->toContain('class App\Payment\StripeGateway (文字列リテラル) → src/Payment/StripeGateway.php');
+    });
+
+    it('interface をたどった起点であることを説明できる', function () {
+        expect(runCli($this->sample, ['src/Payment/StripeGateway.php', '--why'])['raw'])
+            ->toContain("src/Contract/PaymentGateway.php\n  (指定ファイルの interface)")
+            ->toContain('← 指定ファイルの interface');
+    });
 });
 
 describe('全テストが読み込むファイル', function () {

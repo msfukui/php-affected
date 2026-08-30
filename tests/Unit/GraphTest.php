@@ -124,6 +124,43 @@ describe('影響の探索', function () {
     });
 });
 
+describe('起点の interface への拡張', function () {
+    it('実装クラスの起点に interface を加える', function () {
+        $graph = graphOf([
+            '/p/Contract.php' => parsedFile('/p/Contract.php', ['classDefs' => ['contract']]),
+            '/p/Impl.php' => parsedFile('/p/Impl.php', [
+                'classDefs' => ['impl'],
+                'parents' => ['contract'],
+                'interfaces' => ['contract'],
+            ]),
+        ]);
+
+        expect($graph->expandToInterfaces(['/p/Impl.php']))
+            ->toEqualCanonicalizing(['/p/Impl.php', '/p/Contract.php']);
+    });
+
+    it('基底クラスは起点に加えない', function () {
+        $graph = graphOf([
+            '/p/Base.php' => parsedFile('/p/Base.php', ['classDefs' => ['base']]),
+            // parents には入っているが interfaces には入っていない
+            '/p/Child.php' => parsedFile('/p/Child.php', ['classDefs' => ['child'], 'parents' => ['base']]),
+        ]);
+
+        expect($graph->expandToInterfaces(['/p/Child.php']))->toBe(['/p/Child.php']);
+    });
+
+    it('interface の継承も推移的に辿る', function () {
+        $graph = graphOf([
+            '/p/A.php' => parsedFile('/p/A.php', ['classDefs' => ['a']]),
+            '/p/B.php' => parsedFile('/p/B.php', ['classDefs' => ['b'], 'interfaces' => ['a']]),
+            '/p/C.php' => parsedFile('/p/C.php', ['classDefs' => ['c'], 'interfaces' => ['b']]),
+        ]);
+
+        expect($graph->expandToInterfaces(['/p/C.php']))
+            ->toEqualCanonicalizing(['/p/C.php', '/p/B.php', '/p/A.php']);
+    });
+});
+
 describe('暗黙の依存辺', function () {
     it('コード上に現れない辺を追加できる', function () {
         $graph = graphOf([

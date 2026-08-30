@@ -56,6 +56,8 @@ final class Parser
     /** @var list<int> クラス本体が開いた時点の braceDepth。空ならグローバルスコープ。 */
     private array $classBodyDepths = [];
     private bool $pendingClassBody = false;
+    /** いま宣言しているのが interface か。extends 先が interface かの判定に使う */
+    private bool $declaringInterface = false;
 
     private ParsedFile $r;
 
@@ -71,6 +73,7 @@ final class Parser
         $this->braceDepth = 0;
         $this->classBodyDepths = [];
         $this->pendingClassBody = false;
+        $this->declaringInterface = false;
 
         $docs = $this->tokenize($code);
         $this->walk();
@@ -178,6 +181,10 @@ final class Parser
                 case T_INCLUDE_ONCE:
                     $this->i++;
                     $this->handleInclude();
+                    break;
+                case T_CONSTANT_ENCAPSED_STRING:
+                    $this->handleStringLiteral($text);
+                    $this->i++;
                     break;
                 case T_STRING:
                 case T_NAME_QUALIFIED:
@@ -421,6 +428,7 @@ final class Parser
             break;
         }
         $runnable = !$abstract && ($tokenId === T_CLASS || $tokenId === T_ENUM);
+        $this->declaringInterface = $tokenId === T_INTERFACE;
 
         $this->i++;
         $next = $this->ts[$this->i] ?? null;
@@ -439,6 +447,8 @@ final class Parser
 
     private function handleInheritance(): void
     {
+        // `implements X` の X は必ず interface。`interface A extends B` の B も同じ
+        $isInterface = $this->ts[$this->i][0] === T_IMPLEMENTS || $this->declaringInterface;
         $this->i++;
         while ($this->i < $this->n) {
             $t = $this->ts[$this->i];
@@ -450,6 +460,9 @@ final class Parser
                     $lower = strtolower($fqn);
                     $this->r->classRefs[] = $lower;
                     $this->r->parents[] = $lower;
+                    if ($isInterface) {
+                        $this->r->interfaces[] = $lower;
+                    }
                 }
                 $this->i++;
                 continue;
@@ -817,6 +830,25 @@ final class Parser
         return null;
     }
 
+    /**
+     * DI コンテナや設定配列に現れる 'App\Foo\Bar' 形式の文字列を参照として拾う。
+     *
+     * 名前空間区切りを含むものだけに限定している。区切りのない 'User' のような
+     * 文字列まで拾うと、ログのメッセージや設定値と区別がつかず誤検出が増えるため。
+     */
+    private function handleStringLiteral(string $raw): void
+    {
+        $value = ltrim($this->unquote($raw), '\\');
+        if ($value === '' || strlen($value) > 255) {
+            return;
+        }
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*(\\\\[A-Za-z_][A-Za-z0-9_]*)+$/', $value) !== 1) {
+            return;
+        }
+
+        $this->r->strings[] = strtolower($value);
+    }
+
     /** @param list<string> $docs */
     private function scanDocblocks(array $docs): void
     {
@@ -885,6 +917,14 @@ final class Parser
         return $pos === false ? $fqn : substr($fqn, $pos + 1);
     }
 
+    /**
+     * 文字列リテラルから引用符とエスケープを外す。
+     *
+     * 二重引用符に stripcslashes() は使えない。PHP は `"App\Payment\X"` の
+     * `\P` をエスケープとして解釈せずバックスラッシュを残すが、stripcslashes() は
+     * 落としてしまい `AppPaymentX` になってクラス名として認識できなくなる。
+     * ここで必要なのはクラス名とパスの復元だけなので、`\\` を `\` に畳むだけでよい。
+     */
     private function unquote(string $raw): string
     {
         if (strlen($raw) < 2) {
@@ -895,6 +935,6 @@ final class Parser
 
         return $quote === "'"
             ? str_replace(['\\\\', "\\'"], ['\\', "'"], $body)
-            : stripcslashes($body);
+            : str_replace('\\\\', '\\', $body);
     }
 }
