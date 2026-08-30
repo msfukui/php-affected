@@ -1,0 +1,3 @@
+{
+    "autoload": { "files": ["src/alpha_helpers.php"] }
+}

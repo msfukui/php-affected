@@ -35,7 +35,7 @@ describe('--stats', function () {
         $result = runCli($this->sample, ['src/Support/helpers.php', '--stats']);
 
         expect($result['err'])
-            ->toContain('プロジェクト: ファイル 23 件 / 依存辺 25 / 対象テスト 8 件')
+            ->toContain('プロジェクト: ファイル 23 件 / ファイル間の依存 25 / 対象テスト 8 件')
             ->toContain('影響: 指定 1 件 → 到達 7 件 → 出力 7 件');
     });
 
@@ -49,7 +49,7 @@ describe('--stats', function () {
         $result = runCli($this->sample, ['--stats']);
 
         expect($result['err'])
-            ->toContain('プロジェクト: ファイル 23 件 / 依存辺 25 / 対象テスト 8 件')
+            ->toContain('プロジェクト: ファイル 23 件 / ファイル間の依存 25 / 対象テスト 8 件')
             ->not->toContain('影響:');
         expect(trim($result['raw']))->toBe('')
             ->and($result['code'])->toBe(0);

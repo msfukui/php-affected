@@ -120,18 +120,29 @@ final class Cli
         $graph = new Graph($this->parseAll($files));
         $known = $graph->files();
 
-        // bootstrap 等は全テストが読み込むので、テスト -> bootstrap という辺を先に張る
+        // bootstrap 等は全テストが読み込むので、テスト -> bootstrap という依存を先に張る
         // 逆探索より前に張らないと bootstrap 経由の影響が伝わらない
         $globals = array_values(array_filter(
-            (new GlobalFiles($this->root))->detect(),
-            static fn(string $path): bool => isset($known[$path]),
+            (new GlobalFiles($scanner))->detect(),
+            static fn(array $global): bool => isset($known[$global['path']]),
         ));
-        $detector = new TestDetector($scanner, $graph, $globals);
+        $detector = new TestDetector($scanner, $graph, array_column($globals, 'path'));
         if ($globals !== []) {
             $edges = [];
             foreach (array_keys($known) as $path) {
-                if ($detector->isTest($path)) {
-                    $edges[$path] = $globals;
+                if (!$detector->isTest($path)) {
+                    continue;
+                }
+                // 設定ファイルが効くのは、それが置かれたディレクトリ配下のテストだけ。
+                // モノレポで 1 パッケージの bootstrap が全テストを巻き込まないようにする
+                $applicable = [];
+                foreach ($globals as $global) {
+                    if (str_starts_with($path, $global['scope'] . '/')) {
+                        $applicable[] = $global['path'];
+                    }
+                }
+                if ($applicable !== []) {
+                    $edges[$path] = $applicable;
                 }
             }
             $graph->addImplicitEdges($edges);

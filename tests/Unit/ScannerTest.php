@@ -39,6 +39,19 @@ it('ルートからの相対パスに変換する', function () {
         ->and($scanner->relative('/elsewhere/B.php'))->toBe('/elsewhere/B.php');
 });
 
+it('名前を指定してファイルを探せる', function () {
+    $root = makeProject([
+        'composer.json' => '{}',
+        'packages/alpha/composer.json' => '{}',
+        'packages/alpha/phpunit.xml' => '<phpunit/>',
+        'vendor/pkg/composer.json' => '{}',   // 除外ディレクトリは対象外
+        'src/A.php' => '<?php',
+    ]);
+
+    expect(relativePaths($root, (new Scanner($root))->find(['composer.json', 'phpunit.xml'])))
+        ->toBe(['composer.json', 'packages/alpha/composer.json', 'packages/alpha/phpunit.xml']);
+});
+
 it('ルートが存在しなければ空を返す', function () {
     expect((new Scanner('/no/such/directory'))->scan())->toBe([]);
 });

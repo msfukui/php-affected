@@ -13,6 +13,7 @@ declare(strict_types=1);
 beforeEach(function () {
     $this->sample = fixture('sample');
     $this->bootstrapped = fixture('bootstrapped');
+    $this->monorepo = fixture('monorepo');
 });
 
 it('末端クラスを変更したら対応するテストだけを選ぶ', function () {
@@ -88,5 +89,32 @@ describe('全テストが読み込むファイル', function () {
     it('通常のクラスは絞り込まれたままにする', function () {
         expect(runCli($this->bootstrapped, ['src/Thing.php', '--tests'])['out'])
             ->toEqualCanonicalizing(['tests/ThingTest.php']);
+    });
+});
+
+describe('モノレポ (サブディレクトリに設定ファイルがある)', function () {
+    it('ルートの composer.json は全パッケージのテストに波及する', function () {
+        expect(runCli($this->monorepo, ['shared/global_helpers.php', '--tests'])['out'])
+            ->toEqualCanonicalizing([
+                'packages/alpha/tests/AlphaTest.php',
+                'packages/beta/tests/BetaTest.php',
+            ]);
+    });
+
+    // 設定ファイルが置かれたディレクトリ配下にだけ効く。
+    // 全体に効くことにすると、モノレポでは 1 パッケージの変更で全テストが選ばれてしまう
+    it('パッケージの composer.json はそのパッケージのテストにだけ波及する', function () {
+        expect(runCli($this->monorepo, ['packages/alpha/src/alpha_helpers.php', '--tests'])['out'])
+            ->toEqualCanonicalizing(['packages/alpha/tests/AlphaTest.php']);
+    });
+
+    it('パッケージの phpunit.xml の bootstrap も同様に絞られる', function () {
+        expect(runCli($this->monorepo, ['packages/beta/src/BetaSupport.php', '--tests'])['out'])
+            ->toEqualCanonicalizing(['packages/beta/tests/BetaTest.php']);
+    });
+
+    it('通常のクラスは従来どおり静的な参照で追う', function () {
+        expect(runCli($this->monorepo, ['packages/alpha/src/Alpha.php', '--tests'])['out'])
+            ->toEqualCanonicalizing(['packages/alpha/tests/AlphaTest.php']);
     });
 });

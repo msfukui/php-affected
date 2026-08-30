@@ -111,6 +111,31 @@ tests/OrderTest.php
 
 require/include, 全テストが読み込むファイル(bootstrap 等)、命名規約による対応付けも理由として表示される
 
+### 全テストが読み込むファイル
+
+composer の `autoload.files` と phpunit.xml の `bootstrap` に指定されたファイルは、
+コード上どこからも参照されていなくてもテストプロセスに読み込まれる
+そのため、これらを依存として扱わないと検出漏れになる
+
+設定ファイルはプロジェクトルート以外も探索し、**設定ファイルが置かれたディレクトリ配下の
+テストにだけ効く**ものとして扱う
+モノレポで 1 パッケージの `composer.json` を変更したときに、全パッケージのテストが
+選ばれてしまうことを避けるため
+
+```
+monorepo/
+├── composer.json                  autoload.files → 配下の全テストに効く
+├── packages/alpha/
+│   ├── composer.json              autoload.files → alpha のテストにだけ効く
+│   └── tests/AlphaTest.php
+└── packages/beta/
+    ├── phpunit.xml                bootstrap → beta のテストにだけ効く
+    └── tests/BetaTest.php
+```
+
+相対パスは設定ファイルの位置を基準に解決する
+同じディレクトリに `phpunit.xml` と `phpunit.xml.dist` の両方があれば前者を優先する
+
 複数の経路がある場合も代表の 1 本だけを表示する
 
 ### 1 ファイルだけ調べる

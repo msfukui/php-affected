@@ -5,49 +5,66 @@ declare(strict_types=1);
 namespace PhpAffected;
 
 /**
- * 「どのテストを実行しても必ず読み込まれるファイル」を検出する
+ * 「テストを実行すると必ず読み込まれるファイル」を検出する。
  *
  * composer の autoload.files やテストの bootstrap は、コード上どこからも
  * 参照されていなくても全テストプロセスに読み込まれる。ここを依存として
  * 扱わないと「変更したのに関連テストが選ばれない」検出漏れになる。
+ *
+ * 設定ファイルはプロジェクトルートだけにあるとは限らないので、除外規則を
+ * 効かせたまま配下を走査して集める。ただし `packages/foo/composer.json` が
+ * 読み込まれるのは `packages/foo/` 配下のテストだけなので、設定ファイルが
+ * 置かれたディレクトリを有効範囲 (scope) として一緒に返す。
  */
 final readonly class GlobalFiles
 {
-    public function __construct(private string $root) {}
+    public function __construct(private Scanner $scanner) {}
 
-    /** @return list<string> 絶対パス */
+    /**
+     * @return list<array{path: string, scope: string}>
+     *         path  … 全テストが読み込むファイルの絶対パス
+     *         scope … それが効くディレクトリの絶対パス (この配下のテストにだけ効く)
+     */
     public function detect(): array
     {
         $found = [];
-        foreach ([...$this->fromComposer(), ...$this->fromPhpunit()] as $path) {
+        foreach ([...$this->fromComposer(), ...$this->fromPhpunit()] as [$path, $scope]) {
             $real = realpath($path);
             if ($real !== false && is_file($real)) {
-                $found[$real] = true;
+                $found[$real . "\0" . $scope] = ['path' => $real, 'scope' => $scope];
             }
         }
 
-        return array_keys($found);
+        return array_values($found);
     }
 
-    /** @return list<string> */
+    /**
+     * composer.json の autoload.files / autoload-dev.files。
+     * パスは composer.json のあるディレクトリ基準で解決される。
+     *
+     * @return list<array{0: string, 1: string}>
+     */
     private function fromComposer(): array
     {
-        $data = $this->readJson($this->root . '/composer.json');
-
         $out = [];
-        foreach (['autoload', 'autoload-dev'] as $section) {
-            // 外部の JSON なので、期待する形になっているか 1 段ずつ確かめる
-            $autoload = $data[$section] ?? null;
-            if (!is_array($autoload)) {
-                continue;
-            }
-            $files = $autoload['files'] ?? null;
-            if (!is_array($files)) {
-                continue;
-            }
-            foreach ($files as $relative) {
-                if (is_string($relative)) {
-                    $out[] = $this->root . '/' . ltrim($relative, '/');
+        foreach ($this->scanner->find(['composer.json']) as $configPath) {
+            $directory = dirname($configPath);
+            $data = $this->readJson($configPath);
+
+            foreach (['autoload', 'autoload-dev'] as $section) {
+                // 外部の JSON なので、期待する形になっているか 1 段ずつ確かめる
+                $autoload = $data[$section] ?? null;
+                if (!is_array($autoload)) {
+                    continue;
+                }
+                $files = $autoload['files'] ?? null;
+                if (!is_array($files)) {
+                    continue;
+                }
+                foreach ($files as $relative) {
+                    if (is_string($relative)) {
+                        $out[] = [$directory . '/' . ltrim($relative, '/'), $directory];
+                    }
                 }
             }
         }
@@ -55,34 +72,54 @@ final readonly class GlobalFiles
         return $out;
     }
 
-    /** @return list<string> */
+    /**
+     * phpunit.xml の bootstrap 属性。パスは設定ファイルの位置基準で解決される。
+     * 同じディレクトリに両方あれば phpunit.xml が phpunit.xml.dist に優先する。
+     *
+     * @return list<array{0: string, 1: string}>
+     */
     private function fromPhpunit(): array
     {
-        foreach (['phpunit.xml', 'phpunit.xml.dist'] as $candidate) {
-            $path = $this->root . '/' . $candidate;
-            if (!is_file($path)) {
-                continue;
-            }
-            $previous = libxml_use_internal_errors(true);
-            $xml = simplexml_load_file($path);
-            libxml_clear_errors();
-            libxml_use_internal_errors($previous);
+        $configs = $this->scanner->find(['phpunit.xml', 'phpunit.xml.dist']);
 
-            $bootstrap = $xml === false ? '' : (string) ($xml['bootstrap'] ?? '');
-            if ($bootstrap !== '') {
-                return [$this->root . '/' . ltrim($bootstrap, '/')];
+        // ディレクトリごとに 1 つだけ採用する
+        $chosen = [];
+        foreach ($configs as $configPath) {
+            $directory = dirname($configPath);
+            if (basename($configPath) === 'phpunit.xml' || !isset($chosen[$directory])) {
+                $chosen[$directory] = $configPath;
             }
         }
 
-        return [];
+        $out = [];
+        foreach ($chosen as $directory => $configPath) {
+            $bootstrap = $this->readBootstrap($configPath);
+            if ($bootstrap !== null) {
+                $out[] = [$directory . '/' . ltrim($bootstrap, '/'), $directory];
+            }
+        }
+
+        return $out;
+    }
+
+    private function readBootstrap(string $configPath): ?string
+    {
+        $previous = libxml_use_internal_errors(true);
+        $xml = simplexml_load_file($configPath);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        if ($xml === false) {
+            return null;
+        }
+        $bootstrap = (string) ($xml['bootstrap'] ?? '');
+
+        return $bootstrap === '' ? null : $bootstrap;
     }
 
     /** @return array<array-key, mixed> */
     private function readJson(string $path): array
     {
-        if (!is_file($path)) {
-            return [];
-        }
         $data = json_decode((string) file_get_contents($path), true);
 
         return is_array($data) ? $data : [];

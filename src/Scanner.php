@@ -20,8 +20,37 @@ final readonly class Scanner
 
     public function __construct(private string $root) {}
 
-    /** @return list<string> 絶対パスの昇順リスト */
+    /**
+     * 解析対象の PHP ファイル。
+     *
+     * @return list<string> 絶対パスの昇順リスト
+     */
     public function scan(): array
+    {
+        return $this->collect(
+            static fn(\SplFileInfo $info): bool => strtolower($info->getExtension()) === 'php',
+        );
+    }
+
+    /**
+     * 指定した名前のファイルを探す。composer.json や phpunit.xml のように
+     * 拡張子では絞れない設定ファイルを、除外規則を効かせたまま集めるために使う。
+     *
+     * @param  list<string> $basenames
+     * @return list<string> 絶対パスの昇順リスト
+     */
+    public function find(array $basenames): array
+    {
+        $wanted = array_fill_keys($basenames, true);
+
+        return $this->collect(static fn(\SplFileInfo $info): bool => isset($wanted[$info->getFilename()]));
+    }
+
+    /**
+     * @param  \Closure(\SplFileInfo): bool $accept
+     * @return list<string>
+     */
+    private function collect(\Closure $accept): array
     {
         if (!is_dir($this->root)) {
             return [];
@@ -40,7 +69,7 @@ final readonly class Scanner
         $files = [];
         foreach (new \RecursiveIteratorIterator($filtered) as $info) {
             /** @var \SplFileInfo $info */
-            if ($info->isFile() && strtolower($info->getExtension()) === 'php') {
+            if ($info->isFile() && $accept($info)) {
                 $files[] = $info->getPathname();
             }
         }
