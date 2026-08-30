@@ -91,11 +91,27 @@ final class ParsedFile
     public array $includes = [];
 
     /**
-     * extends/implements 先の FQN (小文字)。テスト判定に使う。
+     * extends/implements 先の FQN (小文字)。テスト判定と起点の拡張に使う。
      *
      * @var list<string>
      */
     public array $parents = [];
+
+    /**
+     * parents のうち interface であることが確実なもの (小文字)。
+     * `implements X` の X と、`interface A extends B` の B。
+     *
+     * @var list<string>
+     */
+    public array $interfaces = [];
+
+    /**
+     * クラス名の形をした文字列リテラル (小文字)。
+     * DI コンテナや設定配列にクラス名を文字列で書く形を拾うために使う。
+     *
+     * @var list<string>
+     */
+    public array $strings = [];
 
     public function __construct(public readonly string $path = '') {}
 
@@ -119,6 +135,8 @@ final class ParsedFile
         $this->globalRefs = self::unique($this->globalRefs);
         $this->includes = self::unique($this->includes);
         $this->parents = self::unique($this->parents);
+        $this->interfaces = self::unique($this->interfaces);
+        $this->strings = self::unique($this->strings);
     }
 
     /**

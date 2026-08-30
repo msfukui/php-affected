@@ -111,6 +111,20 @@ tests/OrderTest.php
 
 require/include, 全テストが読み込むファイル(bootstrap 等)、命名規約による対応付けも理由として表示される
 
+DI コンテナのように、型宣言だけでは実装クラスに辿り着けない構成にも対応する
+
+```
+$ bin/php-affected --why src/Payment/StripeGateway.php
+tests/ContainerTest.php
+  └─ require/include → container/services.php
+      └─ class App\Payment\StripeGateway (文字列リテラル) → src/Payment/StripeGateway.php   ← 指定ファイル
+tests/PaymentServiceTest.php
+  └─ class App\Payment\PaymentService → src/Payment/PaymentService.php   ← 指定ファイルの interface の利用側
+```
+
+`StripeGateway` はコンテナに文字列で登録されているだけで、利用側の `PaymentService` は
+interface しか型宣言していないが、依存関係あり、と判定して表示する
+
 ### 全テストが読み込むファイル
 
 composer の `autoload.files` と phpunit.xml の `bootstrap` に指定されたファイルは、
@@ -195,13 +209,18 @@ vendor/bin/phpunit -c affected.xml
 
 - 動的な `require $path` や `new $className` の依存は検出できない
 - `call_user_func('Foo::bar')` のような文字列経由の呼び出しは検出できない
-- DI コンテナに文字列でクラス名を登録している場合、実装クラスの変更は検出できない
+- クラス名を動的に組み立てている場合 (`'App\\' . $name`) は検出できない
+- 名前空間区切りのない文字列 (`'User'`) はクラス名として扱わない
+  - 設定値やメッセージと区別がつかず、過剰検出が大きくなりすぎるため
 
 過剰検出となる場合:
 
 - 依存関係が一切なくても `Foo.php` に対応する `FooTest.php`, `FooTestCase.php`, `FooSpec.php` があれば依存ありと判定する
   - テストの命名規約に従っている場合、念の為テストが対象クラスを参照している可能性が高いと判断する
   - ディレクトリパスの対応は判断条件には含まれず、ファイル名のみで判定している
+- 名前空間区切りを含む文字列リテラルをクラス参照として扱い、依存ありと判定する
+- 指定ファイルが実装する interface を利用しているファイルも依存ありと判定する
+  - 影響が大きくなりすぎるため基底クラスにまでは遡らない
 
 その他:
 
