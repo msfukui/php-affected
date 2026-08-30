@@ -12,8 +12,7 @@
         "dependency-analysis",
         "test-impact-analysis",
         "affected-tests",
-        "test-selection",
-        "monorepo"
+        "test-selection"
     ],
     "homepage": "https://github.com/msfukui/php-affected",
     "authors": [
@@ -73,9 +72,9 @@
     },
     "scripts-descriptions": {
         "test": "Pest でテストを実行する",
-        "stan": "PHPStan で静的解析する",
-        "lint": "コードスタイルを検査する (修正はしない)",
-        "fix": "コードスタイルを修正する",
+        "stan": "PHPStan でコードを静的解析する",
+        "lint": "PHP-CS-Fixer でコードスタイルを検査する (修正はしない)",
+        "fix": "PHP-CS-Fixer でコードスタイルを修正する",
         "check": "CI と同じ検査を一通り実行する"
     }
 }

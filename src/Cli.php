@@ -12,8 +12,8 @@ final class Cli
     使い方:
       php-affected [オプション] <ファイル> [<ファイル>...]
 
-    既定では影響を受けるプロジェクトルート配下の全 PHP ファイルを出力する。
-    対象をテストファイルのみに絞るには --tests を指定する。
+    既定では影響を受けるプロジェクトルート配下の全 PHP ファイルを出力する
+    対象をテストファイルのみに絞るには --tests を指定する
 
     オプション:
       --root=DIR    プロジェクトルート (既定: カレントディレクトリ)
@@ -120,8 +120,8 @@ final class Cli
         $graph = new Graph($this->parseAll($files));
         $known = $graph->files();
 
-        // bootstrap 等は全テストが読み込むので、テスト -> bootstrap という辺を先に張る。
-        // 逆探索より前に張らないと bootstrap 経由の影響が伝わらない。
+        // bootstrap 等は全テストが読み込むので、テスト -> bootstrap という辺を先に張る
+        // 逆探索より前に張らないと bootstrap 経由の影響が伝わらない
         $globals = array_values(array_filter(
             (new GlobalFiles($this->root))->detect(),
             static fn(string $path): bool => isset($known[$path]),
@@ -145,7 +145,7 @@ final class Cli
                 }
             }
             $this->note(sprintf(
-                'プロジェクト: ファイル %d 件 / 依存辺 %d / 対象テスト %d 件',
+                'プロジェクト: ファイル %d 件 / ファイル間の依存 %d / 対象テスト %d 件',
                 count($known),
                 $this->countEdges($graph),
                 $testCount,
@@ -193,7 +193,7 @@ final class Cli
                 count($specified),
                 count($depth),
                 count($selected),
-                // 選択率は「このリポジトリで導入する価値があるか」の目安になる。
+                // 選択率は「このリポジトリで導入する価値があるか」の目安になる
                 // 出力にテスト以外が混ざる既定の動作では意味を成さないので --tests のときだけ出す
                 $this->tests && $testCount > 0
                     ? sprintf(' (テスト全体の %d%%)', (int) round(count($selected) * 100 / $testCount))
@@ -215,8 +215,8 @@ final class Cli
             return 0;
         }
 
-        // --why=PATH: 指定されたファイル 1 つだけを説明する。
-        // --tests で絞られるファイルも対象にしたいので $selected では絞らない。
+        // --why=PATH: 指定されたファイル 1 つだけを説明する
+        // --tests で絞られるファイルも対象にしたいので $selected では絞らない
         $target = $this->resolvePath($this->whyTarget);
         if ($target === null) {
             return 1;
@@ -247,7 +247,7 @@ final class Cli
         return array_keys($specified);
     }
 
-    /** 入力パスを絶対パスにする。見つからなければ警告して null を返す。 */
+    /** 入力パスを絶対パスにする。見つからなければ警告して null を返す */
     private function resolvePath(string $input): ?string
     {
         $absolute = str_starts_with($input, '/') ? $input : $this->root . '/' . $input;
@@ -286,10 +286,10 @@ final class Cli
     }
 
     /**
-     * 1 ファイルについて、指定ファイルまでの経路と各辺の原因になった記号を表示する。
+     * 1 ファイルについて、指定ファイルまでの経路と各辺の原因になった記号を表示する
      *
-     * 経路は幅優先探索の親 ($from) を辿って得た最短の 1 本。
-     * 複数の経路がある場合でも代表の 1 本だけを示す。
+     * 経路は幅優先探索の親 ($from) を辿って得た最短の 1 本
+     * 複数の経路がある場合でも代表の 1 本だけを示す
      *
      * @param array<string,string|null> $from  探索木の親
      * @param array<string,int>         $depth

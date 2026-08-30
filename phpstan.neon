@@ -3,6 +3,5 @@ parameters:
     paths:
         - src
         - bin
-    # フィクスチャは解析対象ではなくデータ。Pest の DSL も対象外にする
     excludePaths:
         - tests/fixtures

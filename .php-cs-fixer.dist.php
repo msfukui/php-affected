@@ -5,8 +5,6 @@ declare(strict_types=1);
 $finder = PhpCsFixer\Finder::create()
     ->in([__DIR__ . '/src', __DIR__ . '/tests'])
     ->append([__DIR__ . '/bin/php-affected'])
-    // フィクスチャは「解析対象として多様な書き方を再現したデータ」なので整形しない。
-    // 例えばグループ use を単一 use に分解されると、そのための回帰テストが無意味になる。
     ->exclude('fixtures');
 
 return (new PhpCsFixer\Config())

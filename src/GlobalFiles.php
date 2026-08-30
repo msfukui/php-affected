@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace PhpAffected;
 
 /**
- * 「どのテストを実行しても必ず読み込まれるファイル」を検出する。
+ * 「どのテストを実行しても必ず読み込まれるファイル」を検出する
  *
  * composer の autoload.files やテストの bootstrap は、コード上どこからも
  * 参照されていなくても全テストプロセスに読み込まれる。ここを依存として
