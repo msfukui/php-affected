@@ -124,40 +124,68 @@ describe('影響の探索', function () {
     });
 });
 
-describe('起点の interface への拡張', function () {
-    it('実装クラスの起点に interface を加える', function () {
-        $graph = graphOf([
+describe('起点の interface 利用側への拡張', function () {
+    /** interface Contract と、その実装・利用側が並ぶグラフ */
+    function gatewayGraph(): Graph
+    {
+        return graphOf([
             '/p/Contract.php' => parsedFile('/p/Contract.php', ['classDefs' => ['contract']]),
+            // 実装しているだけ
             '/p/Impl.php' => parsedFile('/p/Impl.php', [
-                'classDefs' => ['impl'],
-                'parents' => ['contract'],
-                'interfaces' => ['contract'],
+                'classDefs' => ['impl'], 'interfaces' => ['contract'], 'classRefs' => ['contract'],
+            ]),
+            '/p/Sibling.php' => parsedFile('/p/Sibling.php', [
+                'classDefs' => ['sibling'], 'interfaces' => ['contract'], 'classRefs' => ['contract'],
+            ]),
+            // 型宣言で受け取る利用側 (利用位置の参照は anyRefs に入る)
+            '/p/Consumer.php' => parsedFile('/p/Consumer.php', [
+                'classDefs' => ['consumer'], 'classRefs' => ['contract'], 'anyRefs' => ['Contract'],
+            ]),
+            // 実装しつつ注入も受けるデコレータ
+            '/p/Decorator.php' => parsedFile('/p/Decorator.php', [
+                'classDefs' => ['decorator'], 'interfaces' => ['contract'],
+                'classRefs' => ['contract'], 'anyRefs' => ['Contract'],
             ]),
         ]);
+    }
 
-        expect($graph->expandToInterfaces(['/p/Impl.php']))
-            ->toEqualCanonicalizing(['/p/Impl.php', '/p/Contract.php']);
+    it('interface の利用側を起点に加える', function () {
+        expect(gatewayGraph()->expandToInterfaceConsumers(['/p/Impl.php']))
+            ->toContain('/p/Consumer.php');
     });
 
-    it('基底クラスは起点に加えない', function () {
+    // interface 自体は変わっていないので、兄弟の実装には何の影響もない
+    it('同じ interface を実装しているだけの別クラスは加えない', function () {
+        expect(gatewayGraph()->expandToInterfaceConsumers(['/p/Impl.php']))
+            ->not->toContain('/p/Sibling.php');
+    });
+
+    it('実装しつつ注入も受けるクラスは利用側として加える', function () {
+        expect(gatewayGraph()->expandToInterfaceConsumers(['/p/Impl.php']))
+            ->toContain('/p/Decorator.php');
+    });
+
+    it('基底クラスは辿らない', function () {
         $graph = graphOf([
             '/p/Base.php' => parsedFile('/p/Base.php', ['classDefs' => ['base']]),
             // parents には入っているが interfaces には入っていない
             '/p/Child.php' => parsedFile('/p/Child.php', ['classDefs' => ['child'], 'parents' => ['base']]),
+            '/p/User.php' => parsedFile('/p/User.php', ['classRefs' => ['base'], 'anyRefs' => ['Base']]),
         ]);
 
-        expect($graph->expandToInterfaces(['/p/Child.php']))->toBe(['/p/Child.php']);
+        expect($graph->expandToInterfaceConsumers(['/p/Child.php']))->toBe(['/p/Child.php']);
     });
 
-    it('interface の継承も推移的に辿る', function () {
+    it('interface 同士の継承も辿る', function () {
         $graph = graphOf([
-            '/p/A.php' => parsedFile('/p/A.php', ['classDefs' => ['a']]),
-            '/p/B.php' => parsedFile('/p/B.php', ['classDefs' => ['b'], 'interfaces' => ['a']]),
-            '/p/C.php' => parsedFile('/p/C.php', ['classDefs' => ['c'], 'interfaces' => ['b']]),
+            '/p/Upper.php' => parsedFile('/p/Upper.php', ['classDefs' => ['upper']]),
+            '/p/Lower.php' => parsedFile('/p/Lower.php', ['classDefs' => ['lower'], 'interfaces' => ['upper']]),
+            '/p/Impl.php' => parsedFile('/p/Impl.php', ['classDefs' => ['impl'], 'interfaces' => ['lower']]),
+            // 上位 interface だけを使う利用側にも届く
+            '/p/User.php' => parsedFile('/p/User.php', ['classRefs' => ['upper'], 'anyRefs' => ['Upper']]),
         ]);
 
-        expect($graph->expandToInterfaces(['/p/C.php']))
-            ->toEqualCanonicalizing(['/p/C.php', '/p/B.php', '/p/A.php']);
+        expect($graph->expandToInterfaceConsumers(['/p/Impl.php']))->toContain('/p/User.php');
     });
 });
 

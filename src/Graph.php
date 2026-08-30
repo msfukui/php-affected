@@ -247,40 +247,93 @@ final class Graph
     }
 
     /**
-     * 指定されたファイルが実装する interface を辿り、それを定義するファイルも起点に加える。
+     * 指定されたファイルが実装する interface の「利用側」を起点に加える。
      *
      * DI コンテナ経由でしか実装クラスに触れないコードでは、テストは interface しか
-     * 参照していない。起点を interface まで広げないとそのテストに到達できない。
+     * 参照していない。実装クラスを変更したとき、その interface を受け取る側は
+     * 実行時に変更後の実装を渡される可能性があるので影響を受ける。
      *
-     * 基底クラス (`extends`) まで広げると代償が大きすぎる。実測では laravel の
-     * `class Warn extends Component` で対象が 1 件から 983 件 (全テスト) に膨れた。
-     * DI で注入されるのは通常 interface なので、そこに限定している。
+     * 一方、同じ interface を実装している別のクラスは影響を受けない。interface 自体が
+     * 変わっていない以上、兄弟の実装には何の関係もないため起点に加えない。
+     * ただし「実装しつつ自身も注入を受ける」デコレータ等は利用側でもあるので加える。
+     *
+     * 基底クラス (`extends`) は辿らない。laravel の `class Warn extends Component` で
+     * 計測したところ対象が 1 件から 983 件 (全テスト) に膨れたため、
+     * DI で注入される interface に限定している。
      *
      * @param  list<string> $seeds
      * @return list<string>
      */
-    public function expandToInterfaces(array $seeds): array
+    public function expandToInterfaceConsumers(array $seeds): array
     {
         $out = array_fill_keys($seeds, true);
+        $reverse = $this->reverse();
 
-        $queue = $seeds;
-        for ($head = 0; $head < count($queue); $head++) {
-            $parsed = $this->files[$queue[$head]] ?? null;
-            if ($parsed === null) {
-                continue;
-            }
-            foreach ($parsed->interfaces as $interfaceFqn) {
-                foreach ($this->classIndex[$interfaceFqn] ?? [] as $definer) {
-                    if (isset($out[$definer])) {
+        foreach ($this->interfacesOf($seeds) as $interfaceFqn) {
+            foreach ($this->classIndex[$interfaceFqn] ?? [] as $definer) {
+                foreach ($reverse[$definer] ?? [] as $dependent) {
+                    if (isset($out[$dependent]) || $this->onlyImplements($dependent, $interfaceFqn)) {
                         continue;
                     }
-                    $out[$definer] = true;
-                    $queue[] = $definer;
+                    $out[$dependent] = true;
                 }
             }
         }
 
         return array_keys($out);
+    }
+
+    /**
+     * 指定されたファイルが実装する interface を、interface 同士の継承もたどって集める。
+     *
+     * @param  list<string> $seeds
+     * @return list<string> 小文字の FQN
+     */
+    private function interfacesOf(array $seeds): array
+    {
+        $queue = [];
+        foreach ($seeds as $seed) {
+            foreach ($this->files[$seed]->interfaces ?? [] as $fqn) {
+                $queue[] = $fqn;
+            }
+        }
+
+        $seen = [];
+        for ($head = 0; $head < count($queue); $head++) {
+            $fqn = $queue[$head];
+            if (isset($seen[$fqn])) {
+                continue;
+            }
+            $seen[$fqn] = true;
+            foreach ($this->classIndex[$fqn] ?? [] as $definer) {
+                foreach ($this->files[$definer]->interfaces ?? [] as $parent) {
+                    $queue[] = $parent;
+                }
+            }
+        }
+
+        return array_keys($seen);
+    }
+
+    /**
+     * $file が $interfaceFqn を実装しているだけで、利用側ではないか。
+     *
+     * 型宣言や `new` のような「利用位置」に現れた参照は種別を確定できず anyRefs に入る。
+     * implements 節にしか現れないクラスはここに入らないので、両者を区別できる。
+     */
+    private function onlyImplements(string $file, string $interfaceFqn): bool
+    {
+        $parsed = $this->files[$file] ?? null;
+        if ($parsed === null || !in_array($interfaceFqn, $parsed->interfaces, true)) {
+            return false;
+        }
+        foreach ($parsed->anyRefs as $ref) {
+            if (strtolower($ref) === $interfaceFqn) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

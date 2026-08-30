@@ -115,19 +115,22 @@ DI コンテナのように、型宣言だけでは実装クラスに辿り着�
 
 ```
 $ bin/php-affected --why src/Payment/StripeGateway.php
-src/Contract/PaymentGateway.php
-  (指定ファイルの interface)
+src/Payment/PaymentService.php
+  (指定ファイルの interface の利用側)
 tests/ContainerTest.php
   └─ require/include → container/services.php
       └─ class App\Payment\StripeGateway (文字列リテラル) → src/Payment/StripeGateway.php   ← 指定ファイル
 tests/PaymentServiceTest.php
-  └─ class App\Payment\PaymentService → src/Payment/PaymentService.php
-      └─ class App\Contract\PaymentGateway → src/Contract/PaymentGateway.php   ← 指定ファイルの interface
+  └─ class App\Payment\PaymentService → src/Payment/PaymentService.php   ← 指定ファイルの interface の利用側
 ```
 
 `StripeGateway` はコンテナに文字列で登録されているだけで、利用側の `PaymentService` は
 interface しか型宣言していない
-この 2 つの経路 (**文字列リテラル** と **interface への起点の拡張**) で到達している
+この 2 つの経路 (**文字列リテラル** と **interface の利用側への起点の拡張**) で到達している
+
+なお、同じ interface を実装しているだけの別クラス (`PaypalGateway` など) は対象にしない
+interface 自体が変わっていない以上、兄弟の実装には影響がないため
+ただし「実装しつつ自身も注入を受ける」デコレータのようなクラスは利用側でもあるので対象になる
 
 ### 全テストが読み込むファイル
 
@@ -225,9 +228,11 @@ vendor/bin/phpunit -c affected.xml
 - 名前空間区切りを含む文字列リテラルをクラス参照として扱う
   - DI コンテナへの登録や設定配列を辿るため
   - ログのメッセージなどにクラス名を書いている場合、実際には使っていなくても依存として数える
-- 指定ファイルが実装する interface も起点に加える
+- 指定ファイルが実装する interface の利用側も起点に加える
   - 利用側が interface しか型宣言していない場合に、そのテストへ届かせるため
-  - `extends` の基底クラスは対象外。laravel の `class Warn extends Component` で計測したところ、
+  - 実行時にどの実装が渡されるかは静的にはわからないので、その interface を受け取る側は
+    すべて影響を受けるとみなす
+  - `extends` の基底クラスは辿らない。laravel の `class Warn extends Component` で計測したところ、
     基底クラスまで広げると対象が 1 件から 983 件 (全テスト) に膨れたため
 
 その他:
