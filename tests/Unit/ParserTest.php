@@ -178,8 +178,8 @@ describe('参照の抽出', function () {
             ->and($parsed->classRefs)->toContain('app\base');
     });
 
-    // DI で注入されるのは通常 interface なので、起点を広げる対象を interface に限る。
-    // 基底クラスまで広げると影響範囲が跳ね上がる (laravel で 1 件 -> 983 件)
+    // DI で注入されるのは通常 interface なので、起点を広げる対象を interface に限る
+    // 影響範囲が大きくなるため基底クラスまでは広げない
     it('implements 先だけを interface として記録する', function () {
         $parsed = parseCode('<?php namespace App; class X extends Base implements Alpha, Beta {}');
 
