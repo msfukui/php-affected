@@ -52,6 +52,7 @@ php-affected [オプション] <ファイル> [<ファイル>...]
 
   --root=DIR    プロジェクトルート (既定: カレントディレクトリ)
   --tests       対象をテストファイルだけに絞る
+  --entry=PATH  実行単位の入口を宣言し、影響を受けた入口だけを出力する (複数指定可)
   --why         選ばれた理由の連鎖を表示
   --why=PATH    PATH 1 つだけについて理由の連鎖を表示する
   --stats       統計を stderr に出力
@@ -86,6 +87,9 @@ bin/php-affected --tests $(git diff --name-only origin/main)
 
 # なぜ影響を受けるのか依存関係を表示する
 bin/php-affected --why src/Support/Money.php
+
+# 影響を受けた実行単位 (アプリケーションの入口) を列挙する
+bin/php-affected --entry=public/index.php --entry=bin/console $(git diff --name-only origin/main)
 
 # テストファイル以外を取り出す
 comm -23 <(bin/php-affected         src/Support/Money.php | sort) \
@@ -180,6 +184,45 @@ $ bin/php-affected --why=tests/WidgetTest.php src/Support/helpers.php
 tests/WidgetTest.php は指定されたファイルに依存していません。
 ```
 
+### 実行単位への影響を調べる
+
+テストではなく「この変更でどのアプリケーションが影響を受けるか」を知りたい場合は、
+`--entry` で実行単位の入口を宣言する。**影響が届いた入口だけを出力する**。
+
+```
+$ bin/php-affected --entry=public/index.php --entry=bin/console --entry=bin/worker \
+      $(git diff --name-only origin/main)
+public/index.php
+bin/console
+```
+
+モノレポやマルチサービス構成で、どのコンテナを再ビルドするか、どのスモークテストを
+回すかを CI で判定するために使う。`--why` と併用すれば入口までの経路も表示する。
+
+```
+$ bin/php-affected --entry=bin/console --why src/Service/ReportService.php
+bin/console
+  └─ class App\Console\ImportCommand → src/Console/ImportCommand.php
+      └─ class App\Service\ReportService → src/Service/ReportService.php   ← 指定ファイル
+```
+
+`--entry` は逆探索の結果を絞り込むだけで、依存グラフには手を加えない。
+入口を「全テストが読み込むファイル」のような依存として扱うと、フレームワークの入口は
+アプリのほぼ全体に到達するので、どの変更でも全テストが選ばれてしまうからである。
+`--tests` の結果は `--entry` の有無で変わらず、出力するものが食い違うので同時には指定できない。
+
+**「出力されなかった = 影響なし」とは判断できない。** 実行時にパスを組み立てて読み込む
+ファイル (フレームワークのルート定義など) でグラフが切れていると、実際には影響があっても
+入口まで到達しないため。出力された入口を対象に加える、という**加算方向の判断にだけ使う**。
+
+切れている箇所が分かっている場合は、実行時に読み込まれるファイル自体を入口として
+宣言すれば拾える。
+
+```
+$ bin/php-affected --entry=routes/web.php $(git diff --name-only origin/main)
+routes/web.php
+```
+
 ### PHPUnit と組み合わせる
 
 PHPUnit は引数を 1 つしか取らないため、1 ファイルずつ回すか設定ファイルを組み立てる。
@@ -225,6 +268,8 @@ vendor/bin/phpunit -c affected.xml
 その他:
 
 - 1 ファイルに複数の namespace 宣言がある場合、docblock の型解決はファイル全体の `use` を合算して行う
+- `--entry` で宣言した入口は、静的に辿れる依存でしか到達を判定できない
+  - 出力された入口は影響あり、と判断してよいが、出力されなかったことは影響がないことの保証にはならない
 
 ## ライセンス
 

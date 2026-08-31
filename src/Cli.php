@@ -14,10 +14,12 @@ final class Cli
 
     既定では影響を受けるプロジェクトルート配下の全 PHP ファイルを出力する
     対象をテストファイルのみに絞るには --tests を指定する
+    影響を受けた実行単位 (アプリケーションの入口) を知るには --entry を指定する
 
     オプション:
       --root=DIR    プロジェクトルート (既定: カレントディレクトリ)
       --tests       対象をテストファイルだけに絞る
+      --entry=PATH  実行単位の入口を宣言し、影響を受けた入口だけを出力する (複数指定可)
       --why         選ばれた理由の連鎖を表示
       --why=PATH    PATH 1 つだけについて理由の連鎖を表示する
       --stats       統計を stderr に出力
@@ -29,11 +31,14 @@ final class Cli
       php-affected --stats
       php-affected --why src/Support/helpers.php
       php-affected --why=tests/OrderTest.php src/Support/helpers.php
+      php-affected --entry=public/index.php --entry=bin/console $(git diff --name-only)
       php-affected --tests --root=/path/to/project $(git diff --name-only)
     TXT;
 
     private string $root = '';
     private bool $tests = false;
+    /** @var list<string> 実行単位の入口として宣言されたパス */
+    private array $entries = [];
     private bool $why = false;
     private ?string $whyTarget = null;
     private bool $stats = false;
@@ -70,6 +75,13 @@ final class Cli
                 case $arg === '--tests':
                     $this->tests = true;
                     break;
+                case str_starts_with($arg, '--entry='):
+                    $entry = substr($arg, 8);
+                    if ($entry === '') {
+                        throw new \RuntimeException('--entry= にはファイルのパスを指定してください');
+                    }
+                    $this->entries[] = $entry;
+                    break;
                 case $arg === '--why':
                     $this->why = true;
                     break;
@@ -94,6 +106,16 @@ final class Cli
                     throw new \RuntimeException("不明なオプション: {$arg}");
                 default:
                     $this->inputs[] = $arg;
+            }
+        }
+
+        // 出力するものが「テスト」と「実行単位」で食い違うので、混ぜて解釈させない
+        if ($this->entries !== []) {
+            if ($this->tests) {
+                throw new \RuntimeException('--entry と --tests は同時に指定できません');
+            }
+            if ($this->whyTarget !== null) {
+                throw new \RuntimeException('--entry と --why=PATH は同時に指定できません');
             }
         }
 
@@ -179,6 +201,27 @@ final class Cli
             return 0;
         }
 
+        // 実行単位の入口。逆探索の結果を絞り込むためだけに使い、グラフには手を加えない。
+        // 入口を「全テストが読み込むファイル」のように依存として扱うと、フレームワークの
+        // 入口はアプリのほぼ全体に到達するため、どの変更でも全テストが選ばれてしまう
+        $entries = [];
+        foreach ($this->entries as $input) {
+            $entry = $this->resolvePath($input);
+            if ($entry === null) {
+                continue;
+            }
+            if (!isset($known[$entry])) {
+                $this->note('警告: 依存グラフに含まれないため無視します: ' . $scanner->relative($entry));
+                continue;
+            }
+            $entries[$entry] = true;
+        }
+        $entryMode = $this->entries !== [];
+        if ($entryMode && $entries === []) {
+            $this->note('実行単位として解析できるファイルがありません。');
+            return 0;
+        }
+
         // 指定ファイルが実装する interface の利用側も起点に加える。
         // DI コンテナ経由でしか実装クラスに触れないコードでは、テストは interface しか
         // 参照しておらず、起点を広げないとそのテストに到達できない
@@ -197,7 +240,7 @@ final class Cli
 
         $selected = [];
         foreach ($depth as $path => $distance) {
-            if (!$this->tests || $detector->isRunnableTest($path)) {
+            if ($entryMode ? isset($entries[$path]) : (!$this->tests || $detector->isRunnableTest($path))) {
                 $selected[$path] = $distance;
             }
         }
@@ -205,16 +248,20 @@ final class Cli
         uksort($selected, fn(string $a, string $b): int => [$selected[$a], $a] <=> [$selected[$b], $b]);
 
         if ($this->stats) {
+            // 選択率は「このリポジトリで導入する価値があるか」の目安になる
+            // 出力にテスト以外が混ざる既定の動作では意味を成さないので --tests のときだけ出す
+            $ratio = '';
+            if ($this->tests && $testCount > 0) {
+                $ratio = sprintf(' (テスト全体の %d%%)', (int) round(count($selected) * 100 / $testCount));
+            } elseif ($entryMode) {
+                $ratio = sprintf(' (宣言した実行単位 %d 件中)', count($entries));
+            }
             $this->note(sprintf(
                 '影響: 指定 %d 件 → 到達 %d 件 → 出力 %d 件%s',
                 count($specified),
                 count($depth),
                 count($selected),
-                // 選択率は「このリポジトリで導入する価値があるか」の目安になる
-                // 出力にテスト以外が混ざる既定の動作では意味を成さないので --tests のときだけ出す
-                $this->tests && $testCount > 0
-                    ? sprintf(' (テスト全体の %d%%)', (int) round(count($selected) * 100 / $testCount))
-                    : '',
+                $ratio,
             ));
         }
 
